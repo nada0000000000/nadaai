@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>내가 만든 미니 GPT</title>
+<style>
+  :root {
+    --bg: #12141a;
+    --panel: #1a1d26;
+    --border: #2a2e3a;
+    --text: #e8e6df;
+    --muted: #8b8f9c;
+    --accent: #d97757;
+    --user-bubble: #263042;
+    --bot-bubble: #1e2129;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", sans-serif;
+  }
+  .app { display: flex; flex-direction: column; height: 100vh; max-width: 720px; margin: 0 auto; }
+  header { padding: 20px 24px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  header h1 { font-size: 15px; font-weight: 600; margin: 0; }
+  header p { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+  .settings {
+    display: flex; gap: 8px; padding: 12px 24px;
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .settings input {
+    flex: 1; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); padding: 7px 10px; font-size: 12px;
+  }
+  .settings label { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 14px; }
+  .empty-state { margin: auto; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.7; }
+  .msg { max-width: 82%; padding: 11px 15px; border-radius: 14px; font-size: 14.5px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+  .msg.user { align-self: flex-end; background: var(--user-bubble); border-bottom-right-radius: 4px; }
+  .msg.bot { align-self: flex-start; background: var(--bot-bubble); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .msg.bot.loading { color: var(--muted); }
+  form { display: flex; gap: 8px; padding: 16px 20px 20px; border-top: 1px solid var(--border); flex-shrink: 0; }
+  textarea { flex: 1; resize: none; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; color: var(--text); padding: 11px 14px; font-size: 14.5px; font-family: inherit; line-height: 1.4; max-height: 120px; outline: none; }
+  textarea:focus { border-color: var(--accent); }
+  button { background: var(--accent); color: white; border: none; border-radius: 12px; padding: 0 20px; font-size: 14px; font-weight: 600; cursor: pointer; flex-shrink: 0; }
+  button:disabled { opacity: 0.4; cursor: default; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>내가 만든 미니 GPT</h1>
+    <p>내 서버(serve.py)에서 돌아가는 모델과 대화 — 질문 답변형이 아니라 이어쓰기형이에요</p>
+  </header>
+
+  <div class="settings">
+    <label>서버 주소:</label>
+    <input id="apiUrl" value="http://localhost:5000/generate">
+  </div>
+
+  <div class="messages" id="messages">
+    <div class="empty-state" id="empty">첫 문장을 입력하면<br>모델이 그 뒤를 이어서 써줘요.</div>
+  </div>
+
+  <form id="form">
+    <textarea id="input" rows="1" placeholder="시작 문장을 입력하세요..." autofocus></textarea>
+    <button id="send" type="submit">생성</button>
+  </form>
+</div>
+
+<script>
+  const messagesEl = document.getElementById('messages');
+  const emptyEl = document.getElementById('empty');
+  const form = document.getElementById('form');
+  const input = document.getElementById('input');
+  const sendBtn = document.getElementById('send');
+  const apiUrlInput = document.getElementById('apiUrl');
+
+  function addBubble(role, text) {
+    if (document.getElementById('empty')) document.getElementById('empty').remove();
+    const div = document.createElement('div');
+    div.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
+    div.textContent = text;
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return div;
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const prompt = input.value.trim();
+    if (!prompt || sendBtn.disabled) return;
+
+    input.value = '';
+    sendBtn.disabled = true;
+    addBubble('user', prompt);
+    const loadingEl = addBubble('bot', '생성 중...');
+    loadingEl.classList.add('loading');
+
+    try {
+      const res = await fetch(apiUrlInput.value, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: prompt, max_new_tokens: 300 })
+      });
+      const data = await res.json();
+      loadingEl.remove();
+      if (data.error) {
+        addBubble('bot', '오류: ' + data.error);
+      } else {
+        addBubble('bot', data.text);
+      }
+    } catch (err) {
+      loadingEl.remove();
+      addBubble('bot', '서버에 연결할 수 없어요. serve.py가 실행 중인지, 주소가 맞는지 확인해주세요.\n(' + err.message + ')');
+    } finally {
+      sendBtn.disabled = false;
+      input.focus();
+    }
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      form.requestSubmit();
+    }
+  });
+</script>
+</body>
+</html>
